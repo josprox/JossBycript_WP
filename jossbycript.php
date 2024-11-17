@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name: Bcrypt Password Enforcer
- * Description: Reemplaza completamente el manejo de contraseñas de WordPress para usar bcrypt.
- * Version: 2.0
+ * Description: Implementa bcrypt para contraseñas en WordPress y migra automáticamente contraseñas antiguas.
+ * Version: 2.1
  * Author: JOSPROX MX - Melchor Estrada José Luis
  */
 
@@ -18,27 +18,6 @@ require_once ABSPATH . WPINC . '/pluggable.php';
 function wp_hash_password($password) {
     $options = ['cost' => 10];
     return password_hash($password, PASSWORD_BCRYPT, $options);
-}
-
-/**
- * Verifica la contraseña proporcionada contra el hash almacenado.
- *
- * @param string $password Contraseña en texto plano.
- * @param string $hash Hash almacenado en la base de datos.
- * @return bool True si coincide, false en caso contrario.
- */
-function wp_check_password($password, $hash) {
-    // Si el hash es bcrypt.
-    if (password_verify($password, $hash)) {
-        return true;
-    }
-
-    // Si el hash es PHpass, valida y migra.
-    if (is_string($hash) && substr($hash, 0, 3) === '$P$' && wp_check_password_phpass($password, $hash)) {
-        return true;
-    }
-
-    return false;
 }
 
 /**
@@ -60,15 +39,44 @@ function wp_check_password_phpass($password, $hash) {
 }
 
 /**
- * Migrar contraseñas al formato bcrypt después de la validación exitosa.
+ * Verifica la contraseña y migra automáticamente a bcrypt si es válida.
  *
  * @param string $password Contraseña en texto plano.
- * @param string $hash Hash almacenado.
- * @param int    $user_id ID del usuario.
+ * @param string $hash Hash almacenado en la base de datos.
+ * @param int    $user_id ID del usuario actual.
+ * @return bool True si la contraseña es válida, false en caso contrario.
+ */
+function wp_check_password($password, $hash, $user_id = null) {
+    // Si el hash es bcrypt, validar directamente.
+    if (password_verify($password, $hash)) {
+        return true;
+    }
+
+    // Si el hash es PHpass, validar y migrar.
+    if (is_string($hash) && substr($hash, 0, 3) === '$P$' && wp_check_password_phpass($password, $hash)) {
+        if ($user_id) {
+            // Migrar el hash a bcrypt.
+            $new_hash = wp_hash_password($password);
+
+            // Actualizar el hash en la base de datos.
+            global $wpdb;
+            $wpdb->update(
+                $wpdb->users,
+                ['user_pass' => $new_hash],
+                ['ID' => $user_id],
+                ['%s'],
+                ['%d']
+            );
+        }
+        return true;
+    }
+
+    return false;
+}
+
+/**
+ * Enlazar la función de validación al filtro `check_password`.
  */
 add_filter('check_password', function ($check, $password, $hash, $user_id) {
-    if ($check && substr($hash, 0, 3) === '$P$') {
-        wp_set_password($password, $user_id); // Migrar a bcrypt.
-    }
-    return $check;
+    return wp_check_password($password, $hash, $user_id);
 }, 10, 4);
