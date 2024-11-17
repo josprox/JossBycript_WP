@@ -20,7 +20,7 @@
 
 1. Descarga el plugin o clona este repositorio:
    ```bash
-   git clone https://github.com/tu_usuario/bcrypt-password-enforcer.git
+   git clone https://github.com/josprox/JossBycript_WP.git
 
 2. Copia la carpeta del plugin en el directorio de plugins de WordPress:
 
